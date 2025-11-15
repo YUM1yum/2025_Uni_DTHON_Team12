@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from preprocessing import build_dataloader
+from preprocess import build_dataloader
 from model import ClipMatcher, save_clip_matcher
 
 
@@ -70,6 +70,7 @@ def crop_negative(pil_img: Image.Image, pos_bbox: List[float]) -> Image.Image:
     # 그래도 못 찾으면 전체 이미지 반환
     return pil_img.copy()
 
+print("start training clip matcher...")
 
 def train_clip_matcher(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -81,16 +82,22 @@ def train_clip_matcher(args):
         num_workers=args.num_workers,
     )
 
+    
+
     matcher = ClipMatcher(clip_name=args.clip_name).to(device)
     optimizer = torch.optim.AdamW(matcher.parameters(), lr=args.lr, weight_decay=1e-4)
 
+    print("Entering epoch loop now...")
+
     for epoch in range(1, args.epochs + 1):
+        print(f"[DEBUG] === Epoch {epoch} start ===")
         matcher.train()
         running_loss = 0.0
         n_samples = 0
 
-        for batch in dl:
-            # batch 는 sample dict 의 리스트
+        for step, batch in enumerate(dl):
+            print(f"[DEBUG] Epoch {epoch} | Batch {step} START, batch size = {len(batch)}")
+
             pos_images = []
             neg_images = []
             texts = []
@@ -100,7 +107,6 @@ def train_clip_matcher(args):
                 bbox = sample["bbox"]
                 qtxt = sample["query_text"]
 
-                # GT bbox 가 없는 경우 스킵
                 if bbox is None:
                     continue
 
@@ -113,9 +119,11 @@ def train_clip_matcher(args):
                 texts.append(qtxt)
 
             if not texts:
+                print(f"[DEBUG] Epoch {epoch} | Batch {step} SKIP (no GT)")
                 continue
 
-            optimizer.zero_grad(set_to_none=True)
+            print(f"[DEBUG] Epoch {epoch} | Batch {step} BEFORE loss, n={len(texts)}")
+
             loss = matcher.compute_margin_loss(
                 texts=texts,
                 pos_images=pos_images,
@@ -123,6 +131,10 @@ def train_clip_matcher(args):
                 device=device,
                 margin=0.2,
             )
+
+            print(f"[DEBUG] Epoch {epoch} | Batch {step} AFTER loss, loss={loss.item():.4f}")
+
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 
@@ -130,7 +142,7 @@ def train_clip_matcher(args):
             n_samples += len(texts)
 
         avg_loss = running_loss / max(1, n_samples)
-        print(f"[Epoch {epoch}/{args.epochs}] loss={avg_loss:.4f}")
+        print(f"[Epoch {epoch}/{args.epochs}] avg_loss={avg_loss:.4f}")
 
     # 학습 완료 후 모델 저장
     save_clip_matcher(args.ckpt, matcher)
