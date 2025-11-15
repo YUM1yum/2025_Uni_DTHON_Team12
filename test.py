@@ -146,8 +146,9 @@ def run_predict(args):
 
     os.makedirs(os.path.dirname(args.out_csv), exist_ok=True)
     rows = []
-
-    for batch in dl:
+    total = len(ds)
+    processed=0
+    for batch_idx, batch in enumerate(dl):
         for sample in batch:
             img_path = sample["img_path"]
             qtxt = sample["query_text"]
@@ -158,7 +159,13 @@ def run_predict(args):
                 query_text=qtxt,
                 conf_thres=args.conf_thres,
             )
-
+            processed += 1
+            print(
+                f"[Predict] {processed}/{total} | "
+                f"batch={batch_idx} | "
+                f"qid={qid} | "
+                f"pred=({pred_x:.1f},{pred_y:.1f},{pred_w:.1f},{pred_h:.1f})"
+            )
             rows.append(
                 {
                     "query_id": qid,
